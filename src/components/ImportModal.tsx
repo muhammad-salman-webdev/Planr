@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -7,7 +7,12 @@ interface ImportModalProps {
   onOutlookImport: () => void;
 }
 
-const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onGoogleImport, onOutlookImport }) => {
+const ImportModal: React.FC<ImportModalProps> = ({
+  isOpen,
+  onClose,
+  onGoogleImport,
+  // onOutlookImport,
+}) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
@@ -18,16 +23,14 @@ const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, onGoogleImpo
         <h3 className="text-lg font-semibold mb-4">Import from Calendar</h3>
         <button
           className="w-full mb-2 px-3 py-2 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700"
-          onClick={onGoogleImport}
-        >
+          onClick={onGoogleImport}>
           Import from Google Calendar
         </button>
-        <button
+        {/* <button
           className="w-full px-3 py-2 rounded-md bg-blue-900 text-white font-medium hover:bg-blue-950"
-          onClick={onOutlookImport}
-        >
+          onClick={onOutlookImport}>
           Import from Outlook
-        </button>
+        </button> */}
       </div>
     </div>
   );

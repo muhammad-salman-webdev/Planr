@@ -10,7 +10,7 @@
     "copy:sounds": "mkdir -p dist/sounds && cp -v sounds/cat.wav dist/sounds/cat.wav",
     "copy:icons": "mkdir -p dist/icons && cp -v icons/*.png dist/icons/",
     "copy:html": "cp -v public/offscreen.html dist/",
-    "build": "vite build && npm run build:background && npm run copy:manifest && npm run copy:sounds && npm run copy:icons && npm run copy:html",  
+    "build": "vite build && npm run build:background && npm run copy:manifest && npm run copy:sounds && npm run copy:icons && npm run copy:html",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@eslint/js": "^9.9.1",
     "@types/chrome": "^0.0.260",
+    "@types/node": "^22.15.30",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

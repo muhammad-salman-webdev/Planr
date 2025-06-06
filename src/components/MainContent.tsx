@@ -1,8 +1,8 @@
-import React from 'react';
-import TaskForm from './TaskForm';
-import TimeGrid from './TimeGrid';
-import CalendarGrid from './CalendarGrid';
-import { Task } from '../types';
+import React from "react";
+import TaskForm from "./TaskForm";
+import TimeGrid from "./TimeGrid";
+import CalendarGrid from "./CalendarGrid";
+import { Task } from "../types";
 
 interface MainContentProps {
   isFormOpen: boolean;
@@ -21,6 +21,7 @@ interface MainContentProps {
   onTaskUpdate: (task: Task) => void;
   onToggleTaskNotification: (taskId: string, enabled: boolean) => void;
   scrollableContainerRef: React.RefObject<HTMLDivElement>;
+  onCalendarDrop: () => void;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
@@ -39,10 +40,11 @@ const MainContent: React.FC<MainContentProps> = ({
   onCurrentTimeReady,
   onTaskUpdate,
   onToggleTaskNotification,
-  scrollableContainerRef
-}) => (
+  scrollableContainerRef,
+  onCalendarDrop,
+}) =>
   isFormOpen ? (
-    <div className="flex-grow p-4 overflow-y-auto"> 
+    <div className="flex-grow p-4 overflow-y-auto">
       <TaskForm
         task={editingTask || undefined}
         startTime={tempTimeRange?.start}
@@ -67,10 +69,10 @@ const MainContent: React.FC<MainContentProps> = ({
           onCurrentTimeReady={onCurrentTimeReady}
           onTaskUpdate={onTaskUpdate}
           onToggleTaskNotification={onToggleTaskNotification}
+          onDropNotify={onCalendarDrop}
         />
       </div>
     </div>
-  )
-);
+  );
 
 export default MainContent;

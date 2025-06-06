@@ -21,7 +21,8 @@
     "geolocation",
     "alarms",
     "notifications",
-    "offscreen"
+    "offscreen",
+    "identity"
   ],
   "host_permissions": [],
   "background": {
@@ -30,13 +31,17 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "offscreen.html", 
-        "offscreen.js", 
-        "notification.mp3", 
-        "sounds/cat.wav", 
+        "offscreen.html",
+        "offscreen.js",
+        "notification.mp3",
+        "sounds/cat.wav",
         "icons/*"
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "oauth2": {
+    "client_id": "815584967222-p4c0isjf3pabp14eb3jfdar331hrm6gv.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/calendar.readonly"]
+  }
 }
