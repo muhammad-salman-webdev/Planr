@@ -256,7 +256,7 @@ function App() {
     const now = new Date();
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
+    console.log(googleEvents);
     googleEvents.items.forEach((event) => {
       const rawStart = event.start?.dateTime || event.start?.date;
       const rawEnd = event.end?.dateTime || event.end?.date;
