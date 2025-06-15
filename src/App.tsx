@@ -11,9 +11,8 @@ import useNotifications from "./hooks/useNotifications";
 import appIcon from "../icons/icon32.png";
 
 function App() {
-  // TODO: Replace with your client ID
-  const GOOGLE_CLIENT_ID =
-    "815584967222-p4c0isjf3pabp14eb3jfdar331hrm6gv.apps.googleusercontent.com";
+  // NOTE: GOOGLE_CLIENT_ID is primarily handled in background.ts for the OAuth flow.
+  // It's defined there, not here, for security and proper flow execution.
 
   // State
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -35,29 +34,82 @@ function App() {
     getTasksForDate,
     defaultNotificationSetting,
     setDefaultNotificationSetting,
+    clearTasks,
   } = useTaskStore();
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [temperatureUnit, setTemperatureUnit] = useState<"C" | "F">("C");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importingStatus, setImportingStatus] = useState<string | null>(null);
 
   const [notificationMinutesBefore, setNotificationMinutesBefore] =
     useState<number>(5);
 
-  // Load the value once on mount
+  // Load notification settings and initial tasks on mount
   useEffect(() => {
+    // Load notificationMinutesBefore from storage
     chrome.storage?.sync?.get(["notificationMinutesBefore"], (result) => {
       const storedValue = result.notificationMinutesBefore;
-
       if (storedValue === undefined) {
-        // Not found → set to 5 and update state
         chrome.storage?.sync?.set({ notificationMinutesBefore: 5 });
         setNotificationMinutesBefore(5);
       } else {
         setNotificationMinutesBefore(Number(storedValue));
       }
     });
-  }, []);
+
+    // --- Listen for messages from the background script ---
+    const messageListener = (
+      message: any,
+      sender: chrome.runtime.MessageSender,
+      sendResponse: Function
+    ) => {
+      if (message.action === "googleEventsFetched") {
+        console.log(
+          "App.tsx: Received Google events from background:",
+          message.tasks
+        );
+
+        if (message.status === "success" && message.tasks) {
+          // --- Clear existing tasks before adding new ones from Google ---
+          clearTasks();
+
+          message.tasks.forEach((taskData: any) => {
+            // Convert ISO strings back to Date objects before adding to store
+            const task: Task = {
+              ...taskData,
+              startTime: new Date(taskData.startTime),
+              endTime: new Date(taskData.endTime),
+            };
+            addTask(task); // Add each task to your Zustand store
+          });
+          setImportingStatus("Import successful!");
+        } else if (message.status === "error") {
+          console.error(
+            "App.tsx: Error during Google import:",
+            message.message
+          );
+          setImportingStatus(`Import failed: ${message.message}`);
+          alert(`Google Calendar import failed: ${message.message}`);
+        }
+        setIsImportModalOpen(false); // Always close the modal after the process finishes
+        sendResponse({ acknowledged: true }); // Acknowledge the message
+      } else if (message.action === "importProcessStarted") {
+        console.log("App.tsx: Google OAuth process initiated by background.");
+        setImportingStatus("Connecting to Google for authentication...");
+      } else if (message.action === "importFetchingData") {
+        console.log("App.tsx: Fetching calendar data...");
+        setImportingStatus("Fetching calendar data from Google...");
+      }
+      return true; // Keep the message channel open for async sendResponse
+    };
+
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, [addTask, clearTasks]);
 
   // Update both state and storage
   const handleNotificationMinutesBeforeChange = (minutes: number) => {
@@ -82,10 +134,12 @@ function App() {
   const toggleTemperatureUnit = () => {
     const newUnit = temperatureUnit === "C" ? "F" : "C";
     setTemperatureUnit(newUnit);
+    // Consider using chrome.storage.sync or local for consistency in Chrome extension
     localStorage.setItem("temperatureUnit", newUnit);
   };
 
   const handleToggleDefaultNotifications = useCallback(() => {
+    // This action from useTaskStore should also save to chrome.storage.sync
     setDefaultNotificationSetting(!defaultNotificationSetting);
   }, [defaultNotificationSetting, setDefaultNotificationSetting]);
 
@@ -107,7 +161,6 @@ function App() {
     if (scrollableContainerRef.current) {
       lastScrollPositionRef.current = scrollableContainerRef.current.scrollTop;
     }
-
     setEditingTask(task);
     setTempTimeRange(null);
     setIsFormOpen(true);
@@ -141,7 +194,17 @@ function App() {
       }
 
       if (editingTask) {
-        updateTask(editingTask.id, dateKey, task);
+        // When updating, also consider if the date of the task has changed (e.g., dragged to another day)
+        // If the date changes, it needs to be deleted from the old date key and added to the new one.
+        const oldDateKey = format(editingTask.startTime, "yyyy-MM-dd");
+        const newDateKey = format(task.startTime, "yyyy-MM-dd");
+
+        if (oldDateKey !== newDateKey) {
+          deleteTask(editingTask.id, oldDateKey); // Delete from old date
+          addTask(task); // Add to new date
+        } else {
+          updateTask(editingTask.id, dateKey, task); // Update on same date
+        }
       } else {
         addTask(task);
       }
@@ -149,7 +212,14 @@ function App() {
       setEditingTask(null);
       setTempTimeRange(null);
     },
-    [tasksForSelectedDate, editingTask, updateTask, dateKey, addTask]
+    [
+      tasksForSelectedDate,
+      editingTask,
+      updateTask,
+      dateKey,
+      addTask,
+      deleteTask,
+    ] // Added deleteTask to dependencies
   );
 
   const handleCancelForm = useCallback(() => {
@@ -161,10 +231,8 @@ function App() {
   const handleCurrentTimeReady = useCallback((timePosition: number | null) => {
     if (scrollableContainerRef.current) {
       if (!initialScrollDoneRef.current && timePosition !== null) {
-        // Initial scroll for date load: center current time
         const scrollableViewportHeight =
           scrollableContainerRef.current.clientHeight;
-        // Ensure scroll position is not negative and not beyond max scroll height
         const newScrollTop = Math.max(
           0,
           timePosition - scrollableViewportHeight / 2
@@ -172,122 +240,49 @@ function App() {
 
         scrollableContainerRef.current.scrollTop = newScrollTop;
         initialScrollDoneRef.current = true;
-        // Store this initial position as the last known good position as well
         lastScrollPositionRef.current = newScrollTop;
       } else if (initialScrollDoneRef.current) {
-        // Subsequent updates on the same date (e.g., after task C/U/D, form close):
-        // Restore to the last captured scroll position.
         scrollableContainerRef.current.scrollTop =
           lastScrollPositionRef.current;
       }
     }
   }, []);
 
-  // --- Import Calendar Logic ---
-  // const GOOGLE_REDIRECT_URI = window.location.origin; // e.g., http://localhost:5173
-  const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
-
-  // colbalbjjlacenlkomkbpfjdockdkfka - Extension ID
-
+  // --- MODIFIED handleGoogleImport ---
   const handleGoogleImport = () => {
-    const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
-    const params = new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: "token", // or "code" if using server-side exchange
-      scope: GOOGLE_SCOPE,
-      access_type: "online",
-      prompt: "consent",
-    });
-
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-
-    chrome.identity.launchWebAuthFlow(
-      {
-        url: authUrl,
-        interactive: true,
-      },
-      (redirectUrl) => {
-        if (chrome.runtime.lastError) {
-          console.error("Auth failed:", chrome.runtime.lastError.message);
-          return;
+    setIsImportModalOpen(true); // Open the modal
+    setImportingStatus("Initiating Google OAuth..."); // Set initial status
+    // Send a message to the background script to start the OAuth flow
+    chrome.runtime
+      .sendMessage({ action: "initiateGoogleOAuth" })
+      .then((response) => {
+        // This 'response' is from the background script acknowledging the initiation of the message,
+        // not the final result of the OAuth flow. The actual results will come via the
+        // chrome.runtime.onMessage listener in the useEffect hook.
+        if (response && response.status === "error") {
+          console.error(
+            "App.tsx: Error initiating OAuth message to background:",
+            response.message
+          );
+          setImportingStatus(`Failed to start: ${response.message}`);
+          alert(`Failed to initiate Google import: ${response.message}`);
+          setIsImportModalOpen(false); // Close modal on immediate error
+        } else {
+          console.log(
+            "App.tsx: Google OAuth initiation message sent to background."
+          );
         }
-
-        // Extract access token from redirect URL
-        const url = new URL(redirectUrl);
-        const hashParams = new URLSearchParams(url.hash.slice(1));
-        const accessToken = hashParams.get("access_token");
-
-        console.log("Access Token:", accessToken);
-        fetchCalendarEvents(accessToken);
-        // You can now use this token to fetch calendar data
-      }
-    );
-  };
-
-  const fetchCalendarEvents = async (accessToken: string) => {
-    // Step 1: Get color map from Google
-    const getGoogleColorMap = async () => {
-      const res = await fetch("https://www.googleapis.com/calendar/v3/colors", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+      })
+      .catch((error) => {
+        console.error("App.tsx: Failed to send message to background:", error);
+        setImportingStatus(`Failed to send message: ${error.message}`);
+        alert(
+          `Could not communicate with extension background: ${error.message}`
+        );
+        setIsImportModalOpen(false); // Close modal on communication error
       });
-      const data = await res.json();
-      return data.event || {};
-    };
-
-    // Step 2: Fetch events from primary calendar
-    const response = await fetch(
-      "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-
-    const googleEvents = await response.json();
-    if (!googleEvents.items) return;
-
-    const colorMap = await getGoogleColorMap();
-
-    // Get current month range
-    const now = new Date();
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    console.log(googleEvents);
-    googleEvents.items.forEach((event) => {
-      const rawStart = event.start?.dateTime || event.start?.date;
-      const rawEnd = event.end?.dateTime || event.end?.date;
-
-      if (!rawStart || !rawEnd) return; // Skip if no valid times
-
-      const start = new Date(rawStart);
-      const end = new Date(rawEnd);
-
-      // Only add tasks from the current month
-      if (start < firstOfMonth || start >= firstOfNextMonth) return;
-
-      const task: Task = {
-        id: event.id || crypto.randomUUID(),
-        title: event.summary || "Untitled Event",
-        description: event.description || "",
-        startTime: start,
-        endTime: end,
-        color: colorMap[event.colorId]?.background || "#3399FF",
-        notificationsEnabled: defaultNotificationSetting,
-      };
-
-      addTask(task);
-    });
-
-    // Getting Back to the App
-    setIsImportModalOpen(false);
   };
 
-  // ---------------------
-  // ---------------------
   // ---------------------
   // ---------------------
   // ---------------------
@@ -300,15 +295,13 @@ function App() {
   // Handlers for MainContent
   const handleTimeSlotClick = useCallback(
     (startTime: Date, endTime: Date) => {
-      const isOverlapping = tasksForSelectedDate.find((task) => {
-        const overLapCheck =
-          startTime < task.endTime && endTime > task.startTime;
-
-        if (overLapCheck) {
-          if (startTime < task.endTime) startTime = task.endTime;
-          // return false; // Stop looping and return this task
-        }
-        return false;
+      // Logic for overlapping tasks is already in handleSaveTask,
+      // it's generally better to create task first and then validate/save.
+      // If you want to prevent creation on overlap, this logic is okay here.
+      const isOverlapping = tasksForSelectedDate.some((task) => {
+        // Exclude the new task itself if it somehow ends up in tasksForSelectedDate before saving
+        // This check from handleSaveTask is likely more robust for new tasks.
+        return startTime < task.endTime && endTime > task.startTime;
       });
 
       if (isOverlapping) {
@@ -340,13 +333,30 @@ function App() {
         alert("Cannot move task: Time slot overlaps with an existing task");
         return;
       }
-      updateTask(updatedTask.id, dateKey, updatedTask);
+      // When updating, also consider if the date of the task has changed (e.g., dragged to another day)
+      // If the date changes, it needs to be deleted from the old date key and added to the new one.
+      const oldDateKey = format(
+        tasksForSelectedDate.find((t) => t.id === updatedTask.id)?.startTime ||
+          updatedTask.startTime,
+        "yyyy-MM-dd"
+      );
+      const newDateKey = format(updatedTask.startTime, "yyyy-MM-dd");
+
+      if (oldDateKey !== newDateKey) {
+        deleteTask(updatedTask.id, oldDateKey); // Delete from old date
+        addTask(updatedTask); // Add to new date
+      } else {
+        updateTask(updatedTask.id, dateKey, updatedTask); // Update on same date
+      }
     },
-    [tasksForSelectedDate, updateTask, dateKey]
+    [tasksForSelectedDate, updateTask, dateKey, deleteTask, addTask] // Added deleteTask and addTask to dependencies
   );
 
   const handleCalendarDrop = () => {
-    lastScrollPositionRef.current = scrollableContainerRef.current.scrollTop;
+    // Ensure ref is not null before accessing .current
+    if (scrollableContainerRef.current) {
+      lastScrollPositionRef.current = scrollableContainerRef.current.scrollTop;
+    }
   };
 
   return (
@@ -368,6 +378,7 @@ function App() {
         onClose={() => setIsImportModalOpen(false)}
         onGoogleImport={handleGoogleImport}
         onOutlookImport={handleOutlookImport}
+        importingStatus={importingStatus}
       />
       <div ref={headerContainerRef}>
         <Header
@@ -400,6 +411,7 @@ function App() {
         onToggleTaskNotification={handleToggleTaskNotification}
         scrollableContainerRef={scrollableContainerRef}
         onCalendarDrop={handleCalendarDrop}
+        selectedDate={selectedDate} // ADDED HERE: Pass selectedDate to MainContent
       />
     </div>
   );

@@ -5,7 +5,7 @@ export interface Task {
   startTime: Date;
   endTime: Date;
   color?: string;
-  notificationsEnabled?: boolean; 
+  notificationsEnabled?: boolean;
 }
 
 export interface TimeSlot {
@@ -19,7 +19,12 @@ export interface TaskStore {
   setTasks: (tasks: Record<string, Task[]>) => void; // Added
   setDefaultNotificationSetting: (enabled: boolean) => void; // Added
   addTask: (task: Task) => void;
-  updateTask: (taskId: string, date: string, updatedTask: Partial<Task>) => void;
+  updateTask: (
+    taskId: string,
+    date: string,
+    updatedTask: Partial<Task>
+  ) => void;
   deleteTask: (taskId: string, date: string) => void;
   getTasksForDate: (date: string) => Task[];
+  clearTasks: () => void; // <--- ADDED THIS LINE
 }

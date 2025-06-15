@@ -147,6 +147,13 @@ const useTaskStore = create<TaskStore>((set, get) => ({
     const tasks = get().tasks[date] || [];
     return tasks.map(hydrateTaskDates); // Dates are hydrated here
   },
+
+  // --- NEW: Action to clear all tasks ---
+  clearTasks: () => {
+    set({ tasks: {} }); // Reset the tasks object in state
+    saveToStorage({}); // Clear tasks in storage
+    console.log("All tasks cleared.");
+  },
 }));
 
 // Initialize from Chrome storage if available
